@@ -25,7 +25,7 @@ PIN_LED = 15
 
 I2C_FREQ = 400000
 I2C_ADDR = 0x77
-PUBLISH_INTERVAL = 5000
+PUBLISH_INTERVAL = 5000  # milliseconds
 TEMP_THRESHOLD = 30.0
 
 # ==========================================
@@ -50,6 +50,7 @@ mqtt_client = None
 # ==========================================
 
 def ensure_wifi():
+    """Make sure WiFi is connected, reconnect if needed"""
     if wlan.isconnected():
         return True
 
@@ -63,6 +64,7 @@ def ensure_wifi():
         attempts += 1
 
     if wlan.isconnected():
+        # Disable power management to keep connection stable
         try:
             wlan.config(pm=0xa11140)
         except:
@@ -74,6 +76,7 @@ def ensure_wifi():
     return False
 
 def ensure_mqtt():
+    """Check MQTT connection and reconnect if needed"""
     global mqtt_client
     try:
         if mqtt_client:
@@ -102,13 +105,14 @@ def ensure_mqtt():
     return False
 
 def get_sensor_data():
+    """Read BME280 sensor and format data for MQTT"""
     try:
         t, p, h = bme.read_compensated_data()
         return {
             'temp_val': t,
             'payload': ujson.dumps({
                 "temperature": round(t, 2),
-                "pressure": round(p/100, 2),
+                "pressure": round(p/100, 2),  # Convert Pa to hPa
                 "humidity": round(h, 2),
                 "device_id": CLIENT_ID.decode()
             })
