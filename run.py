@@ -1,6 +1,5 @@
 import network
 import time
-import machine
 import ujson
 import gc
 import math
@@ -109,34 +108,6 @@ def ensure_mqtt(wdt=None):
             return False
     return False
 
-def get_sensor_data():
-    if not bme:
-        return None
-    try:
-        t, p, h = bme.read_compensated_data()
-        dew = calculate_dew_point(t, h)
-        heat = calculate_heat_index(t, h)
-        return {
-            'temp_val': t,
-            'payload': ujson.dumps({
-                "temperature": round(t, 2),
-                "pressure": round(p/100, 2),
-                "humidity": round(h, 2),
-                "dew_point": round(dew, 2),
-                "heat_index": round(heat, 2),
-                "device_id": CLIENT_ID
-            })
-        }
-    except Exception as e:
-        print(f"[SENSOR] Read error: {e}")
-        return None
-
-def safe_sleep(seconds, wdt=None):
-    for _ in range(seconds):
-        if wdt:
-            wdt.feed()
-        time.sleep(1)
-
 def calculate_dew_point(T, RH):
     a = 17.62
     b = 243.12
@@ -167,6 +138,34 @@ def calculate_heat_index(T_celsius, RH):
 
     hi_celsius = (hi - 32) * 5/9
     return hi_celsius
+
+def get_sensor_data():
+    if not bme:
+        return None
+    try:
+        t, p, h = bme.read_compensated_data()
+        dew = calculate_dew_point(t, h)
+        heat = calculate_heat_index(t, h)
+        return {
+            'temp_val': t,
+            'payload': ujson.dumps({
+                "temperature": round(t, 2),
+                "pressure": round(p/100, 2),
+                "humidity": round(h, 2),
+                "dew_point": round(dew, 2),
+                "heat_index": round(heat, 2),
+                "device_id": CLIENT_ID
+            })
+        }
+    except Exception as e:
+        print(f"[SENSOR] Read error: {e}")
+        return None
+
+def safe_sleep(seconds, wdt=None):
+    for _ in range(seconds):
+        if wdt:
+            wdt.feed()
+        time.sleep(1)
 
 # ==========================================
 # MAIN LOOP
