@@ -208,7 +208,7 @@ def main():
             now = time.ticks_ms()
             if time.ticks_diff(now, last_publish) > PUBLISH_INTERVAL:
                 if ensure_mqtt(wdt):
-                    mqtt_client.publish(MQTT_TOPIC, data['payload'], retain=True, qos=0)
+                    mqtt_client.publish(MQTT_TOPIC, data['payload'], retain=True, qos=1)
                     print(f"[PUB] JSON Sent: {data['payload']}")
                     last_publish = now
 
