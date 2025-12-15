@@ -3,6 +3,7 @@ import time
 import machine
 import ujson
 import gc
+import math
 from machine import Pin, I2C, WDT
 import bme280_float as bme280
 from umqtt.simple import MQTTClient
@@ -113,12 +114,16 @@ def get_sensor_data():
         return None
     try:
         t, p, h = bme.read_compensated_data()
+        dew = calculate_dew_point(t, h)
+        heat = calculate_heat_index(t, h)
         return {
             'temp_val': t,
             'payload': ujson.dumps({
                 "temperature": round(t, 2),
                 "pressure": round(p/100, 2),
                 "humidity": round(h, 2),
+                "dew_point": round(dew, 2),
+                "heat_index": round(heat, 2),
                 "device_id": CLIENT_ID
             })
         }
@@ -131,6 +136,37 @@ def safe_sleep(seconds, wdt=None):
         if wdt:
             wdt.feed()
         time.sleep(1)
+
+def calculate_dew_point(T, RH):
+    a = 17.62
+    b = 243.12
+    alpha = ((a * T) / (b + T)) + math.log(RH / 100.0)
+    dew_point = (b * alpha) / (a - alpha)
+    return dew_point
+
+def calculate_heat_index(T_celsius, RH):
+    T_f = (T_celsius * 9/5) + 32
+
+    if T_f < 80:
+        return T_celsius
+
+    hi = 0.5 * (T_f + 61.0 + ((T_f - 68.0) * 1.2) + (RH * 0.094))
+
+    if hi > 80:
+        hi = -42.379 + 2.04901523 * T_f + 10.14333127 * RH - \
+             0.22475541 * T_f * RH - 0.00683783 * T_f * T_f - \
+             0.05481717 * RH * RH + 0.00122874 * T_f * T_f * RH + \
+             0.00085282 * T_f * RH * RH - 0.00000199 * T_f * T_f * RH * RH
+
+        if (RH < 13) and (T_f >= 80) and (T_f <= 112):
+            adj = ((13 - RH) / 4) * math.sqrt((17 - abs(T_f - 95.)) / 17)
+            hi -= adj
+        elif (RH > 85) and (T_f >= 80) and (T_f <= 87):
+            adj = ((RH - 85) / 10) * ((87 - T_f) / 5)
+            hi += adj
+
+    hi_celsius = (hi - 32) * 5/9
+    return hi_celsius
 
 # ==========================================
 # MAIN LOOP
