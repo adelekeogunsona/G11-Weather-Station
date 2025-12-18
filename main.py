@@ -10,7 +10,7 @@ from umqtt.simple import MQTTClient
 # ==========================================
 # CONFIGURATION
 # ==========================================
-WIFI_SSID = 'TPADGuest'
+WIFI_SSID = 'WiFiSSID'
 WIFI_PASS = 'password'
 
 MQTT_BROKER = 'test.mosquitto.org'
