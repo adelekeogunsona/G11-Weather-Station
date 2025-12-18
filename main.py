@@ -23,17 +23,17 @@ PIN_SCL = 1
 PIN_LED = 15
 
 I2C_FREQ = 400000
-I2C_ADDR = 0x77
-PUBLISH_INTERVAL = 30000 # 30s
-TEMP_THRESHOLD = 30.0
-WDT_TIMEOUT = 8000
+I2C_ADDR = 0x77  # BME280 I2C address
+PUBLISH_INTERVAL = 30000  # 30s
+TEMP_THRESHOLD = 30.0  # Celsius threshold for LED alert
+WDT_TIMEOUT = 8000  # Watchdog timeout in milliseconds
 
 # ==========================================
 # SYSTEM SETUP
 # ==========================================
 red_led = Pin(PIN_LED, Pin.OUT)
 i2c = I2C(0, sda=Pin(PIN_SDA), scl=Pin(PIN_SCL), freq=I2C_FREQ)
-time.sleep(0.5)
+time.sleep(0.5)  # Allow I2C bus to stabilize
 
 wlan = network.WLAN(network.STA_IF)
 mqtt_client = None
@@ -55,6 +55,7 @@ def init_sensor():
         return False
 
 def ensure_wifi(wdt=None):
+    """Ensure WiFi connection is active, reconnect if needed."""
     if wlan.isconnected():
         return True
 
@@ -65,13 +66,13 @@ def ensure_wifi(wdt=None):
     attempts = 0
     while not wlan.isconnected() and attempts < 10:
         if wdt:
-            wdt.feed()
+            wdt.feed()  # Prevent watchdog reset during connection
         time.sleep(1)
         attempts += 1
 
     if wlan.isconnected():
         try:
-            wlan.config(pm=0xa11140) # disable power saving
+            wlan.config(pm=0xa11140)  # Disable power saving for stable connection
         except:
             pass
         print(f"[WIFI] Connected: {wlan.ifconfig()[0]}")
@@ -81,10 +82,11 @@ def ensure_wifi(wdt=None):
     return False
 
 def ensure_mqtt(wdt=None):
+    """Ensure MQTT connection is active, reconnect if needed."""
     global mqtt_client
     try:
         if mqtt_client:
-            mqtt_client.ping()
+            mqtt_client.ping()  # Check if connection is still alive
             return True
     except Exception:
         print("[MQTT] Connection lost. Reconnecting...")
@@ -109,6 +111,7 @@ def ensure_mqtt(wdt=None):
     return False
 
 def calculate_dew_point(T, RH):
+    """Calculate dew point using Magnus formula (T in Celsius, RH in %)."""
     a = 17.62
     b = 243.12
     alpha = ((a * T) / (b + T)) + math.log(RH / 100.0)
@@ -116,19 +119,22 @@ def calculate_dew_point(T, RH):
     return dew_point
 
 def calculate_heat_index(T_celsius, RH):
+    """Calculate heat index using Rothfusz equation (T in Celsius, RH in %)."""
     T_f = (T_celsius * 9/5) + 32
 
     if T_f < 80:
-        return T_celsius
+        return T_celsius  # Heat index only meaningful above 80°F
 
     hi = 0.5 * (T_f + 61.0 + ((T_f - 68.0) * 1.2) + (RH * 0.094))
 
     if hi > 80:
+        # Full Rothfusz equation for accurate calculation
         hi = -42.379 + 2.04901523 * T_f + 10.14333127 * RH - \
              0.22475541 * T_f * RH - 0.00683783 * T_f * T_f - \
              0.05481717 * RH * RH + 0.00122874 * T_f * T_f * RH + \
              0.00085282 * T_f * RH * RH - 0.00000199 * T_f * T_f * RH * RH
 
+        # Adjustments for extreme conditions
         if (RH < 13) and (T_f >= 80) and (T_f <= 112):
             adj = ((13 - RH) / 4) * math.sqrt((17 - abs(T_f - 95.)) / 17)
             hi -= adj
@@ -140,17 +146,18 @@ def calculate_heat_index(T_celsius, RH):
     return hi_celsius
 
 def get_sensor_data():
+    """Read sensor data and calculate derived values, return formatted JSON payload."""
     if not bme:
         return None
     try:
-        t, p, h = bme.read_compensated_data()
+        t, p, h = bme.read_compensated_data()  # Temperature (°C), Pressure (Pa), Humidity (%)
         dew = calculate_dew_point(t, h)
         heat = calculate_heat_index(t, h)
         return {
             'temp_val': t,
             'payload': ujson.dumps({
                 "temperature": round(t, 2),
-                "pressure": round(p/100, 2),
+                "pressure": round(p/100, 2),  # Convert Pa to hPa
                 "humidity": round(h, 2),
                 "dew_point": round(dew, 2),
                 "heat_index": round(heat, 2),
@@ -162,6 +169,7 @@ def get_sensor_data():
         return None
 
 def safe_sleep(seconds, wdt=None):
+    """Sleep in 1-second increments while feeding watchdog to prevent reset."""
     for _ in range(seconds):
         if wdt:
             wdt.feed()
@@ -171,6 +179,7 @@ def safe_sleep(seconds, wdt=None):
 # MAIN LOOP
 # ==========================================
 def main():
+    """Main application loop: read sensor, monitor connections, publish data."""
     global bme
     print("[SYSTEM] Starting Weather Station...")
 
@@ -183,8 +192,9 @@ def main():
 
     while True:
         try:
-            wdt.feed()
+            wdt.feed()  # Reset watchdog timer each loop iteration
 
+            # Reinitialize sensor if not available
             if not bme:
                 print("[SENSOR] Attempting to reinitialize...")
                 init_sensor()
@@ -200,11 +210,13 @@ def main():
                 safe_sleep(2, wdt)
                 continue
 
+            # Control LED based on temperature threshold
             red_led.value(1 if data['temp_val'] > TEMP_THRESHOLD else 0)
 
             if data['temp_val'] > TEMP_THRESHOLD:
                 print(f"[ALERT] High Temp: {data['temp_val']:.2f}")
 
+            # Publish data at configured interval
             now = time.ticks_ms()
             if time.ticks_diff(now, last_publish) > PUBLISH_INTERVAL:
                 if ensure_mqtt(wdt):
@@ -212,7 +224,7 @@ def main():
                     print(f"[PUB] JSON Sent: {data['payload']}")
                     last_publish = now
 
-            gc.collect()
+            gc.collect()  # Free up memory
             time.sleep(1)
 
         except Exception as e:
